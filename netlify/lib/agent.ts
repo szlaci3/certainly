@@ -14,6 +14,16 @@ type Interaction = {
   steps?: {type: string, content?: {type: string, text?: string}[]}[]
 }
 
+class ProviderError extends Error {
+  status: number
+  constructor(message:string,status:number) { super(message); this.status=status }
+}
+
+export function retryable(e:unknown) {
+  return e instanceof TypeError || (e instanceof Error && ['TimeoutError','AbortError'].includes(e.name)) ||
+    (e instanceof ProviderError && (e.status===429 || e.status>=500))
+}
+
 async function request(path: string, payload?: object): Promise<Interaction> {
   const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
   if (!key) throw Error('Configure GEMINI_API_KEY in the function environment.')
@@ -21,12 +31,12 @@ async function request(path: string, payload?: object): Promise<Interaction> {
     method: payload ? 'POST' : 'GET',
     headers: {'Content-Type': 'application/json', 'x-goog-api-key': key},
     body: payload && JSON.stringify(payload),
-    signal: AbortSignal.timeout(45_000),
+    signal: AbortSignal.timeout(payload ? 180_000 : 30_000),
   })
   if (!response.ok) {
     const reason = response.status === 429 ? 'quota or rate limit reached' :
       response.status === 403 ? 'access denied' : 'request failed'
-    throw Error(`Antigravity returned HTTP ${response.status}: ${reason}.`)
+    throw new ProviderError(`Antigravity returned HTTP ${response.status}: ${reason}.`,response.status)
   }
   return response.json()
 }

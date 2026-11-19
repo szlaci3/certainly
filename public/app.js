@@ -199,20 +199,46 @@ function message(text,user=false){
   const p=document.createElement('p');p.className='bubble'+(user?' user':'')
   p.textContent=text;$('#log').append(p);$('#log').scrollTop=$('#log').scrollHeight
 }
+// Preserve the submission key after an ambiguous network failure. Retrying the
+// same brief must recover its job even if the first POST response was lost.
+let lastSubmission
+try{lastSubmission=JSON.parse(sessionStorage.getItem('material-submission'))}catch{}
+function rememberSubmission(value){
+  lastSubmission=value
+  try{
+    if(value)sessionStorage.setItem('material-submission',JSON.stringify(value))
+    else sessionStorage.removeItem('material-submission')
+  }catch{} // In-memory retry still works if browser storage is disabled.
+}
+async function materialRequest(path,options){
+  for(let attempt=0;;attempt++){
+    let response
+    try{response=await fetch(path,{...options,signal:AbortSignal.timeout(25000)})}
+    catch(err){if(attempt>=2)throw err}
+    if(response && (response.status<500 || attempt>=2)){
+      if(response.status>=400 && response.status<500)rememberSubmission(null)
+      const data=await response.json()
+      if(!response.ok)throw Error(data.error||'Material request failed.')
+      return data
+    }
+    await new Promise(resolve=>setTimeout(resolve,1000*2**attempt))
+  }
+}
 $('form').onsubmit=async e=>{
   e.preventDefault();const prompt=$('textarea').value.trim(),t=target;if(!prompt||$('#send').disabled)return
   message(t+' · '+prompt,true);$('#send').disabled=true;$('#send').textContent='Generating…'
-  try{const res=await fetch('/api/material',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:t,prompt,previous:surfaces[t].description||surfaces[t].name})})
-    let data=await res.json()
-    if(!res.ok)throw Error(data.error||'Generation failed.')
+  try{
+    const body=JSON.stringify({target:t,prompt,previous:surfaces[t].description||surfaces[t].name})
+    if(lastSubmission?.body!==body)rememberSubmission({body,id:newId()})
+    let data=await materialRequest('/api/material',{method:'POST',
+      headers:{'Content-Type':'application/json','Idempotency-Key':lastSubmission.id},body})
     const job=data.job
     while(data.pending){
       $('#send').textContent='Antigravity is composing…'
       await new Promise(resolve=>setTimeout(resolve,6000))
-      const status=await fetch('/api/material/'+encodeURIComponent(job))
-      data=await status.json()
-      if(!status.ok)throw Error(data.error||'Could not check material status.')
+      data=await materialRequest('/api/material/'+encodeURIComponent(job))
     }
+    rememberSubmission(null)
     const recipe=data.recipe
     const blob=await new Promise((resolve,reject)=>{
       const worker=new Worker('compose.js')
