@@ -119,12 +119,44 @@ function refresh(){
   for(const b of document.querySelectorAll('[data-t]'))b.setAttribute('aria-pressed',b.dataset.t===target)
   for(const b of $('.swatches').children)b.setAttribute('aria-pressed',b.dataset.id===surfaces[target].id)
 }
+async function materialColor(blob){
+  const bitmap=await createImageBitmap(blob)
+  const tile=document.createElement('canvas')
+  tile.width=tile.height=24
+  const ctx=tile.getContext('2d')
+  try{
+    ctx.imageSmoothingEnabled=false
+    ctx.drawImage(bitmap,0,0,24,24)
+  }finally{bitmap.close()}
+  const pixels=ctx.getImageData(0,0,24,24).data
+  // Group nearby shades so grain and narrow veins do not overwhelm the main color.
+  const groups=new Map()
+  let largest
+  for(let i=0;i<pixels.length;i+=4){
+    const r=pixels[i],g=pixels[i+1],b=pixels[i+2]
+    const key=(r>>5)*64+(g>>5)*8+(b>>5)
+    const group=groups.get(key)||{count:0,r:0,g:0,b:0}
+    group.count++;group.r+=r;group.g+=g;group.b+=b
+    groups.set(key,group)
+    if(!largest||group.count>largest.count)largest=group
+  }
+  return '#'+[largest.r,largest.g,largest.b].map(sum=>
+    Math.round(sum/largest.count).toString(16).padStart(2,'0')).join('')
+}
 function addMaterial(m){
   library.set(m.id,m)
   const b=document.createElement('button')
   b.dataset.id=m.id
   const preview=document.createElement(m.generated?'span':'img')
-  if(m.generated)preview.className='placeholder'
+  if(m.generated){
+    preview.className='placeholder'
+    if(m.color)preview.style.backgroundColor=m.color
+    else materialColor(m.blob).then(color=>{
+      preview.style.backgroundColor=color
+      m.color=color
+      if(db)db.transaction('materials','readwrite').objectStore('materials').put(m)
+    }).catch(()=>{}) // Older records can still use the neutral placeholder.
+  }
   else{preview.src=m.src||URL.createObjectURL(m.blob);preview.alt=''}
   b.append(preview,document.createTextNode(m.name))
   b.onclick=()=>applyMaterial(target,m).catch(()=>notice('Could not load this material.'))
@@ -246,7 +278,8 @@ $('form').onsubmit=async e=>{
       worker.onerror=()=>{worker.terminate();reject(Error('The texture could not be rendered.'))}
       worker.postMessage(recipe)
     })
-    const material={id:newId(),name:recipe.name,description:recipe.name+' — '+prompt,blob,generated:true}
+    const material={id:newId(),name:recipe.name,description:recipe.name+' — '+prompt,blob,generated:true,
+      color:await materialColor(blob).catch(()=>recipe.base)}
     if(!await applyMaterial(t,material))return
     message('Applied '+recipe.name+' to the '+t+'.');$('textarea').value=''
   }catch(err){message(err.message)}finally{$('#send').disabled=false;$('#send').textContent='Generate material'}
