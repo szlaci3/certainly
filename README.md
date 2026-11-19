@@ -1,10 +1,15 @@
-# Certainly on Netlify
+# Certainly
 
-Import this repository into Netlify. The checked-in netlify.toml publishes public/ and bundles the TypeScript function. Leave the build command empty. Configure these environment variables with **Functions** scope before deploying:
+Certainly is a 3D material playground you can explore in your browser. Its world has just two surfaces: a floor beneath you and a ceiling overhead. Each repeats its own texture into the distance. Walk across a wooden floor under a marble ceiling, then swap either surface and watch it fade into the next.
 
-- **GEMINI_API_KEY** — a Gemini API key with access to the Antigravity preview agent.
-- **JOB_TOKEN_SECRET** — generate a random secret once with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Keep it stable across instances and deploys. Rotation invalidates outstanding polling links.
+[Open Certainly on Netlify](https://certainly.netlify.app/)
 
-For local development use Node 24, set the two variables in your shell and run `npx netlify-cli dev` from the repository root. Run the backend checks with `node --test tests/material.test.mjs`.
+## Explore the scene
 
-The frontend starts generation with POST /api/material and polls GET /api/material/:job. Google stores the background interaction. A signed, one-hour handle lets any function instance poll it without a local database. Uploads and completed textures remain in the browser's IndexedDB.
+Use the **arrow keys** to walk forward, backward, or sideways. The **crosshair** means moving the mouse turns the view. Click the scene once to switch to the standard arrow cursor and hold the viewing angle steady. Click the scene again to resume looking around. On a touchscreen, drag to look around.
+
+## Make it your own
+
+Open **Materials** in the bottom dock and choose **Floor** or **Ceiling**. Pick a thumbnail to try wood, brick, marble, grass, or one of the original textures. You can also upload a photo to see how it looks repeated across a surface.
+
+For a custom pattern, open the **Material assistant** and describe what you want, such as “midnight teal marble with thin jade veins.” Antigravity composes a procedural recipe, and your browser renders it into a tile. Your uploads, generated materials, and surface choices are saved in this browser so you can return to the same world later.

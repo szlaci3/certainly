@@ -226,6 +226,9 @@ $('form').onsubmit=async e=>{
   }catch(err){message(err.message)}finally{$('#send').disabled=false;$('#send').textContent='Generate material'}
 }
 let pointer=null
+canvas.addEventListener('click',e=>{
+  if(e.pointerType==='mouse' && e.button===0)canvas.classList.toggle('free-cursor')
+})
 canvas.onpointerdown=e=>{
   if(e.pointerType==='mouse')return
   pointer={id:e.pointerId,x:e.clientX,y:e.clientY}
@@ -233,6 +236,7 @@ canvas.onpointerdown=e=>{
 }
 canvas.onlostpointercapture=e=>{if(pointer?.id===e.pointerId)pointer=null}
 canvas.onpointermove=e=>{
+  if(e.pointerType==='mouse' && canvas.classList.contains('free-cursor'))return
   let dx=e.movementX,dy=e.movementY
   if(e.pointerType!=='mouse'){
     if(pointer?.id!==e.pointerId)return
