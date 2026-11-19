@@ -65,6 +65,22 @@ for(const [t,s] of Object.entries(surfaces)){
   $('#cards').append(card);card.querySelector('button').onclick=()=>{uploadTarget=t;$('#file').click()}
   setImage(t,s.src,s.name)
 }
+for(const [id, name] of Object.entries({wood:'Wooden floor', brick:'Brick wall', marble:'Marble', grass:'Grass'})){
+  const button=document.createElement('button')
+  const image=document.createElement('img')
+  const src='materials/'+id+'.webp'
+  image.src=src
+  image.alt=''
+  button.append(image,document.createTextNode(name))
+  button.onclick=async()=>{
+    const surface=target
+    try{
+      await setImage(surface,src,name)
+      surfaces[surface].description=name
+    }catch{message('Could not load '+name+'.')}
+  }
+  $('.swatches').append(button)
+}
 function message(text,user=false){const p=document.createElement('p');p.className='bubble'+(user?' user':'');p.textContent=text;$('#log').append(p);p.scrollIntoView({block:'nearest'})}
 $('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;const src=URL.createObjectURL(f);try{await setImage(uploadTarget,src,f.name);surfaces[uploadTarget].description=f.name}catch{URL.revokeObjectURL(src);message('Could not decode that image.')}e.target.value=''}
 function select(t){target=t;document.querySelectorAll('[data-t]').forEach(b=>{b.classList.toggle('active',b.dataset.t===t);b.setAttribute('aria-pressed',b.dataset.t===t)})}
@@ -74,8 +90,27 @@ $('form').onsubmit=async e=>{
   e.preventDefault();const prompt=$('textarea').value.trim(),t=target;if(!prompt||$('#send').disabled)return
   message(t+' · '+prompt,true);$('#send').disabled=true;$('#send').textContent='Generating…'
   try{const res=await fetch('/api/material',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:t,prompt,previous:surfaces[t].description||surfaces[t].name})})
-    const data=await res.json();if(!res.ok)throw Error(data.error||'Generation failed.')
-    await setImage(t,data.image,data.name);surfaces[t].description=data.description;message(data.reply);$('textarea').value=''
+    let data=await res.json()
+    if(!res.ok)throw Error(data.error||'Generation failed.')
+    const job=data.job
+    while(data.pending){
+      $('#send').textContent='Antigravity is composing…'
+      await new Promise(resolve=>setTimeout(resolve,6000))
+      const status=await fetch('/api/material/'+encodeURIComponent(job))
+      data=await status.json()
+      if(!status.ok)throw Error(data.error||'Could not check material status.')
+    }
+    const recipe=data.recipe
+    const blob=await new Promise((resolve,reject)=>{
+      const worker=new Worker('compose.js')
+      worker.onmessage=e=>{worker.terminate();resolve(e.data)}
+      worker.onerror=()=>{worker.terminate();reject(Error('The texture could not be rendered.'))}
+      worker.postMessage(recipe)
+    })
+    const src=URL.createObjectURL(blob)
+    try{await setImage(t,src,recipe.name)}catch(err){URL.revokeObjectURL(src);throw err}
+    surfaces[t].description=recipe.name+' — '+prompt
+    message('Applied '+recipe.name+' to the '+t+'.');$('textarea').value=''
   }catch(err){message(err.message)}finally{$('#send').disabled=false;$('#send').textContent='✧  Generate material  ↗'}
 }
 let pointer=null
