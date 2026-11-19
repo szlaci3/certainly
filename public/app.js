@@ -58,7 +58,7 @@ if(gl){
     gl.drawArrays(gl.TRIANGLES,0,3)
   }
   new ResizeObserver(redraw).observe(canvas)
-}else $('.caption h2').textContent='WebGL 2 is required'
+}else $('#notice').textContent='WebGL 2 is required'
 async function setImage(t,src,name){
   const surface=surfaces[t], request=Symbol()
   surface.request=request
@@ -94,34 +94,111 @@ async function setImage(t,src,name){
   }
   const old=surfaces[t].src;Object.assign(surfaces[t],{src,name})
   if(old.startsWith('blob:'))URL.revokeObjectURL(old)
-  const card=$('#'+t);card.querySelector('img').src=src;card.querySelector('strong').textContent=name;redraw();return true
+  redraw();return true
 }
-for(const [t,s] of Object.entries(surfaces)){
-  const card=document.createElement('div');card.id=t;card.className='card'
-  card.innerHTML='<img alt=""><div><label>'+t.toUpperCase()+'</label><strong></strong></div><button aria-label="Upload '+t+' image" title="Upload image">↑</button>'
-  $('#cards').append(card);card.querySelector('button').onclick=()=>{uploadTarget=t;$('#file').click()}
-  setImage(t,s.src,s.name)
+const library=new Map()
+let db, openPanel=null
+function showPanel(which){
+  openPanel=which
+  $('#panel').hidden=!which
+  $('#library').hidden=which!=='library'
+  $('#chat').hidden=which!=='chat'
+  $('#heading').textContent=which==='chat'?'Material assistant':'Materials'
+  for(const b of document.querySelectorAll('[data-panel]'))b.setAttribute('aria-expanded',b.dataset.panel===which)
 }
-for(const [id, name] of Object.entries({wood:'Wooden floor', brick:'Brick wall', marble:'Marble', grass:'Grass'})){
-  const button=document.createElement('button')
-  const image=document.createElement('img')
-  const src='materials/'+id+'.webp'
-  image.src=src
-  image.alt=''
-  button.append(image,document.createTextNode(name))
-  button.onclick=async()=>{
-    const surface=target
-    try{
-      if(await setImage(surface,src,name))surfaces[surface].description=name
-    }catch{message('Could not load '+name+'.')}
-  }
-  $('.swatches').append(button)
+for(const b of document.querySelectorAll('[data-panel]')){
+  b.onclick=()=>showPanel(openPanel===b.dataset.panel?null:b.dataset.panel)
 }
-function message(text,user=false){const p=document.createElement('p');p.className='bubble'+(user?' user':'');p.textContent=text;$('#log').append(p);p.scrollIntoView({block:'nearest'})}
-$('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;const surface=uploadTarget,src=URL.createObjectURL(f);try{if(await setImage(surface,src,f.name))surfaces[surface].description=f.name}catch{URL.revokeObjectURL(src);message('Could not decode that image.')}e.target.value=''}
-function select(t){target=t;document.querySelectorAll('[data-t]').forEach(b=>{b.classList.toggle('active',b.dataset.t===t);b.setAttribute('aria-pressed',b.dataset.t===t)})}
-document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>select(b.dataset.t));select(target)
-document.querySelectorAll('.suggest button').forEach((b,i)=>b.onclick=()=>{select(i?'ceiling':'floor');$('textarea').value=b.textContent.replace(' ↗','');$('textarea').focus()})
+function closePanel(){
+  document.querySelector('[data-panel="'+openPanel+'"]')?.focus()
+  showPanel(null)
+}
+$('#close').onclick=closePanel
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&openPanel)closePanel()})
+function refresh(){
+  for(const b of document.querySelectorAll('[data-t]'))b.setAttribute('aria-pressed',b.dataset.t===target)
+  for(const b of $('.swatches').children)b.setAttribute('aria-pressed',b.dataset.id===surfaces[target].id)
+}
+function addMaterial(m){
+  library.set(m.id,m)
+  const b=document.createElement('button')
+  b.dataset.id=m.id
+  const preview=document.createElement(m.generated?'span':'img')
+  if(m.generated)preview.className='placeholder'
+  else{preview.src=m.src||URL.createObjectURL(m.blob);preview.alt=''}
+  b.append(preview,document.createTextNode(m.name))
+  b.onclick=()=>applyMaterial(target,m).catch(()=>notice('Could not load this material.'))
+  if(m.blob)$('.swatches').prepend(b)
+  else $('.swatches').append(b)
+}
+function notice(text){$('#notice').textContent=text}
+function writeState(key,value,material){
+  if(!db)return
+  const tx=db.transaction(material?['materials','choices']:['choices'],'readwrite')
+  if(material)tx.objectStore('materials').put(material)
+  tx.objectStore('choices').put(value,key)
+  tx.onabort=()=>notice('Browser storage is unavailable. Changes apply to this session only.')
+}
+async function applyMaterial(t,m,save=true){
+  const src=m.src||URL.createObjectURL(m.blob)
+  try{if(!await setImage(t,src,m.name))return false}
+  catch(err){if(m.blob)URL.revokeObjectURL(src);throw err}
+  const fresh=!library.has(m.id)
+  if(fresh)addMaterial(m)
+  surfaces[t].id=m.id
+  surfaces[t].description=m.description||m.name
+  if(save)writeState(t,m.id,fresh?m:null)
+  refresh()
+  return true
+}
+function dbResult(request){
+  return new Promise((resolve,reject)=>{
+    request.onsuccess=()=>resolve(request.result)
+    request.onerror=()=>reject(request.error)
+  })
+}
+async function initialize(){
+  for(const [id,name,src] of [
+    ['wood','Wooden floor','materials/wood.webp'],['brick','Brick wall','materials/brick.webp'],
+    ['marble','Marble','materials/marble.webp'],['grass','Grass','materials/grass.webp'],
+    ['dune','Sienna dunes','dune.jpg'],['aurora','Aurora veil','aurora.jpg']
+  ])addMaterial({id,name,src})
+  let floor,ceiling,selected
+  try{
+    const opening=indexedDB.open('strata-world',1)
+    opening.onupgradeneeded=()=>{
+      opening.result.createObjectStore('materials',{keyPath:'id'})
+      opening.result.createObjectStore('choices')
+    }
+    db=await dbResult(opening)
+    const tx=db.transaction(['choices','materials'])
+    const choices=tx.objectStore('choices')
+    const [items,...settings]=await Promise.all([dbResult(tx.objectStore('materials').getAll()),
+      ...['floor','ceiling','target'].map(k=>dbResult(choices.get(k)))])
+    items.forEach(addMaterial)
+    ;[floor,ceiling,selected]=settings
+  }catch{notice('Browser storage is unavailable. Changes apply to this session only.')}
+  target=selected==='ceiling'?'ceiling':'floor'
+  await Promise.all([applyMaterial('floor',library.get(floor)||library.get('dune'),false),
+    applyMaterial('ceiling',library.get(ceiling)||library.get('aurora'),false)])
+}
+$('.studio').inert=true
+initialize().catch(()=>notice('Could not restore the scene.')).finally(()=>{$('.studio').inert=false})
+for(const b of document.querySelectorAll('[data-t]'))b.onclick=()=>{
+  target=b.dataset.t;refresh();writeState('target',target)
+}
+function newId(){return Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-')}
+$('#upload').onclick=()=>{uploadTarget=target;$('#file').click()}
+$('#file').onchange=async e=>{
+  const blob=e.target.files[0];e.target.value=''
+  if(!blob)return
+  try{await applyMaterial(uploadTarget,{id:newId(),name:blob.name,blob})}
+  catch{notice('Could not open that image.')}
+}
+function message(text,user=false){
+  const p=document.createElement('p');p.className='bubble'+(user?' user':'')
+  p.textContent=text;$('#log').append(p);$('#log').scrollTop=$('#log').scrollHeight
+}
 $('form').onsubmit=async e=>{
   e.preventDefault();const prompt=$('textarea').value.trim(),t=target;if(!prompt||$('#send').disabled)return
   message(t+' · '+prompt,true);$('#send').disabled=true;$('#send').textContent='Generating…'
@@ -143,22 +220,51 @@ $('form').onsubmit=async e=>{
       worker.onerror=()=>{worker.terminate();reject(Error('The texture could not be rendered.'))}
       worker.postMessage(recipe)
     })
-    const src=URL.createObjectURL(blob)
-    try{if(!await setImage(t,src,recipe.name))return}catch(err){URL.revokeObjectURL(src);throw err}
-    surfaces[t].description=recipe.name+' — '+prompt
+    const material={id:newId(),name:recipe.name,description:recipe.name+' — '+prompt,blob,generated:true}
+    if(!await applyMaterial(t,material))return
     message('Applied '+recipe.name+' to the '+t+'.');$('textarea').value=''
-  }catch(err){message(err.message)}finally{$('#send').disabled=false;$('#send').textContent='✧  Generate material  ↗'}
+  }catch(err){message(err.message)}finally{$('#send').disabled=false;$('#send').textContent='Generate material'}
 }
 let pointer=null
-canvas.onpointerdown=e=>{pointer=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId)}
-canvas.onlostpointercapture=()=>pointer=null
-canvas.onpointermove=e=>{if(!pointer)return;yaw-=(e.clientX-pointer[0])*.004;pitch=Math.max(-1.45,Math.min(1.45,pitch+(e.clientY-pointer[1])*.004));pointer=[e.clientX,e.clientY];redraw()}
-let last=0
-function move(now){if(!keys.size){last=0;return}const step=last?Math.min(now-last,50)*.004:0;last=now
- const f=keys.has('w')-keys.has('s'),r=keys.has('d')-keys.has('a')
- x+=(f*Math.sin(yaw)+r*Math.cos(yaw))*step;z+=(f*Math.cos(yaw)-r*Math.sin(yaw))*step;redraw();requestAnimationFrame(move)}
-let moving=false
-window.onkeydown=e=>{const k=e.key.toLowerCase();if(e.ctrlKey||e.metaKey||e.altKey||e.target.matches('input,textarea')||!['w','a','s','d'].includes(k))return;if(!keys.size&&!last)requestAnimationFrame(move);keys.add(k)}
-window.onkeyup=e=>keys.delete(e.key.toLowerCase());window.onblur=()=>keys.clear()
+canvas.onpointerdown=e=>{
+  if(e.pointerType==='mouse')return
+  pointer={id:e.pointerId,x:e.clientX,y:e.clientY}
+  canvas.setPointerCapture(e.pointerId)
+}
+canvas.onlostpointercapture=e=>{if(pointer?.id===e.pointerId)pointer=null}
+canvas.onpointermove=e=>{
+  let dx=e.movementX,dy=e.movementY
+  if(e.pointerType!=='mouse'){
+    if(pointer?.id!==e.pointerId)return
+    dx=e.clientX-pointer.x;dy=e.clientY-pointer.y
+    pointer.x=e.clientX;pointer.y=e.clientY
+  }
+  yaw+=dx*.004
+  pitch=Math.max(-1.45,Math.min(1.45,pitch-dy*.004))
+  redraw()
+}
+const arrows=new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'])
+let last=0, movementFrame=0
+function move(now){
+  movementFrame=0
+  if(!keys.size){last=0;return}
+  const step=last?Math.min(now-last,50)*.004:0;last=now
+  const f=keys.has('ArrowUp')-keys.has('ArrowDown')
+  const r=keys.has('ArrowRight')-keys.has('ArrowLeft')
+  x+=(f*Math.sin(yaw)+r*Math.cos(yaw))*step
+  z+=(f*Math.cos(yaw)-r*Math.sin(yaw))*step
+  redraw();movementFrame=requestAnimationFrame(move)
+}
+function editing(el){return el.isContentEditable||el.matches('input,textarea,select')}
+document.addEventListener('focusin',e=>{if(editing(e.target))keys.clear()})
+window.onkeydown=e=>{
+  if(!arrows.has(e.key)||editing(e.target)||e.ctrlKey||e.metaKey||e.altKey)return
+  e.preventDefault();keys.add(e.key)
+  if(!movementFrame)movementFrame=requestAnimationFrame(move)
+}
+window.onkeyup=e=>keys.delete(e.key)
+window.onblur=()=>keys.clear()
 $('#reset').onclick=()=>{yaw=x=z=0;pitch=-.035;redraw()}
 $('#expand').onclick=()=>document.fullscreenElement?document.exitFullscreen():$('#viewport').requestFullscreen()
+
+if(!document.fullscreenEnabled)$('#expand').hidden=true

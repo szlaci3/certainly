@@ -1,5 +1,20 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Strata — World studio</title><link rel="stylesheet" href="style.css"></head><body><header><strong><i>▱</i> STRATA</strong><span>World studio</span><small>Spatial workspace</small></header><main><section class="intro"><div><label>WORKSPACE / WORLD EDITOR</label><h1>World studio<span>.</span></h1></div><button id="reset">↺ &nbsp; Reset view</button></section><div class="layout"><section><div id="viewport"><canvas id="scene"></canvas><label class="overlay"><b>●</b> &nbsp; LIVE VIEWPORT</label><button id="expand" title="Toggle fullscreen" aria-label="Toggle fullscreen">⛶</button><div class="caption"><label>ENVIRONMENT &nbsp; / &nbsp; 01</label><h2>Infinite expanse</h2></div></div><div class="controls">✥ &nbsp; Drag to look <span>W A S D &nbsp; to move</span></div><div class="sectionhead"><h3>Surface materials</h3><label>02 SURFACES</label></div><div id="cards"></div>
-<section class="library" aria-labelledby="library-title">
-<div class="library-head"><h3 id="library-title">Material library</h3>
-<div class="destination" role="group" aria-label="Apply library material to"><span>Apply to</span><button data-t="floor">Floor</button><button data-t="ceiling">Ceiling</button></div></div>
-<div class="swatches"></div></section></section><aside><div class="asidetop"><div class="spark">✧</div><div><label>GENERATION</label><h3>Material assistant</h3></div></div><section class="chat"><label>APPLY TO</label><div id="targets"><button data-t="floor">▱ &nbsp; Floor</button><button data-t="ceiling">▱ &nbsp; Ceiling</button></div><div id="log" aria-live="polite"><p class="bubble">Describe a surface you’d like to create. I can turn your idea into a seamless texture for your world.</p></div><div class="suggest"><label>TRY A PROMPT</label><button>Black volcanic sand ↗</button><button>Soft luminous clouds ↗</button></div><form><textarea maxlength="1600" required placeholder="Describe your material…" aria-label="Material description"></textarea><button id="send">✧ &nbsp; Generate material &nbsp; ↗</button></form><small class="model">✦ &nbsp; Antigravity · Procedural textures</small></section></aside></div></main><input type="file" id="file" accept="image/*" hidden><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#20232b"><title>Strata — World studio</title><link rel="stylesheet" href="style.css"></head>
+<body><main id="viewport">
+<canvas id="scene" aria-label="3D world. Move the mouse or drag on touch to look around. Use the arrow keys to move."></canvas>
+<h1><span aria-hidden="true">▱</span> Strata</h1>
+<div id="notice" role="status"></div>
+<div class="studio">
+<section id="panel" hidden aria-labelledby="heading">
+<header><h2 id="heading">Materials</h2><button id="close" aria-label="Close panel">×</button></header>
+<div class="targets" role="group" aria-label="Apply material to"><button data-t="floor">Floor</button><button data-t="ceiling">Ceiling</button></div>
+<div id="library"><div class="swatches" aria-label="Material choices"></div><button id="upload">↑ &nbsp; Upload image</button></div>
+<div id="chat" hidden><div id="log" aria-live="polite"></div><form><textarea maxlength="1600" required placeholder="Describe a material…" aria-label="Material description"></textarea><button id="send">Generate material</button></form></div>
+</section>
+<nav aria-label="World controls">
+<button data-panel="library" aria-label="Materials" title="Materials" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="m3 8 9-5 9 5-9 5zM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>
+<button data-panel="chat" aria-label="Material assistant" title="Material assistant" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 4h16v13h-9l-5 4v-4H4zM8 9h8M8 12h5"/></svg></button>
+<i></i><button id="reset" aria-label="Reset view" title="Reset view"><svg viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></svg></button>
+<button id="expand" aria-label="Toggle fullscreen" title="Toggle fullscreen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5"/></svg></button>
+</nav></div><input type="file" id="file" accept="image/*" hidden>
+</main><script src="app.js"></script></body></html>
