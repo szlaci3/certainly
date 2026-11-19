@@ -230,7 +230,7 @@ canvas.addEventListener('click',e=>{
   if(e.pointerType==='mouse' && e.button===0)canvas.classList.toggle('free-cursor')
 })
 canvas.onpointerdown=e=>{
-  if(e.pointerType==='mouse')return
+  if(e.pointerType==='mouse'||pointer)return
   pointer={id:e.pointerId,x:e.clientX,y:e.clientY}
   canvas.setPointerCapture(e.pointerId)
 }
@@ -240,7 +240,7 @@ canvas.onpointermove=e=>{
   let dx=e.movementX,dy=e.movementY
   if(e.pointerType!=='mouse'){
     if(pointer?.id!==e.pointerId)return
-    dx=e.clientX-pointer.x;dy=e.clientY-pointer.y
+    dx=pointer.x-e.clientX;dy=pointer.y-e.clientY
     pointer.x=e.clientX;pointer.y=e.clientY
   }
   yaw+=dx*.004
@@ -249,12 +249,27 @@ canvas.onpointermove=e=>{
 }
 const arrows=new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'])
 let last=0, movementFrame=0
+const heldArrows=new Map()
+for(const button of document.querySelectorAll('[data-walk]')){
+  button.onpointerdown=e=>{
+    if(e.button!==0)return
+    e.preventDefault()
+    button.setPointerCapture(e.pointerId)
+    heldArrows.set(e.pointerId,button.dataset.walk)
+    if(!movementFrame)movementFrame=requestAnimationFrame(move)
+  }
+  button.onpointerup=button.onpointercancel=button.onlostpointercapture=e=>heldArrows.delete(e.pointerId)
+  button.oncontextmenu=e=>e.preventDefault()
+}
+function pressed(key){
+  return keys.has(key)||Array.from(heldArrows.values()).includes(key)
+}
 function move(now){
   movementFrame=0
-  if(!keys.size){last=0;return}
+  if(!keys.size&&!heldArrows.size){last=0;return}
   const step=last?Math.min(now-last,50)*.004:0;last=now
-  const f=keys.has('ArrowUp')-keys.has('ArrowDown')
-  const r=keys.has('ArrowRight')-keys.has('ArrowLeft')
+  const f=pressed('ArrowUp')-pressed('ArrowDown')
+  const r=pressed('ArrowRight')-pressed('ArrowLeft')
   x+=(f*Math.sin(yaw)+r*Math.cos(yaw))*step
   z+=(f*Math.cos(yaw)-r*Math.sin(yaw))*step
   redraw();movementFrame=requestAnimationFrame(move)
@@ -267,7 +282,9 @@ window.onkeydown=e=>{
   if(!movementFrame)movementFrame=requestAnimationFrame(move)
 }
 window.onkeyup=e=>keys.delete(e.key)
-window.onblur=()=>keys.clear()
+function stopWalking(){keys.clear();heldArrows.clear()}
+window.onblur=stopWalking
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopWalking()})
 $('#reset').onclick=()=>{yaw=x=z=0;pitch=-.035;redraw()}
 $('#expand').onclick=()=>document.fullscreenElement?document.exitFullscreen():$('#viewport').requestFullscreen()
 

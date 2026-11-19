@@ -6,7 +6,7 @@ Certainly is a 3D material playground you can explore in your browser. Its world
 
 ## Explore the scene
 
-Use the **arrow keys** to walk forward, backward, or sideways. The **crosshair** means moving the mouse turns the view. Click the scene once to switch to the standard arrow cursor and hold the viewing angle steady. Click the scene again to resume looking around. On a touchscreen, drag to look around.
+Use the **arrow keys** to walk forward, backward, or sideways. The **crosshair** means moving the mouse turns the view. Click the scene once to switch to the standard arrow cursor and hold the viewing angle steady. Click the scene again to resume looking around. On phones and tablets, hold the on-screen arrows to walk. Swipe with another finger to look around: drag the scene right to look left, or down to look up.
 
 ## Make it your own
 
