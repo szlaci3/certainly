@@ -215,9 +215,8 @@ function addMaterial(m){
       button.textContent=style
       button.onclick=async()=>{
         const surface=target, seed=newId()
-        const recipe=recolorRecipe(m.recipe,style,seed)
         try{
-          const blob=await renderRecipe(recipe)
+          const {blob,recipe}=await renderRecipe({recipe:m.recipe,style,seed})
           await applyMaterial(surface,{id:newId(),name:recipe.name,recipe,seed,blob,generated:true,
             color:await materialColor(blob).catch(()=>recipe.base)})
         }catch{notice('Could not create the color variation.')}

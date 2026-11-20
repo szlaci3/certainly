@@ -35,7 +35,34 @@ function weight(layer,u,v,seed){
   }
 }
 function rgb(hex){return [1,3,5].map(i=>parseInt(hex.slice(i,i+2),16))}
-self.onmessage=async({data:recipe})=>{
+// Score candidate palettes after the layers have blended. Palette shifts that
+// cancel each other, or affect only a nearly invisible layer, score poorly.
+function chooseVariation(source,style,seed){
+  const samples=[]
+  for(let y=0;y<12;y++)for(let x=0;x<12;x++){
+    samples.push(source.layers.map((l,i)=>l.opacity*weight(l,(x+.5)/12,(y+.5)/12,i*48947+31)))
+  }
+  const palette=r=>[rgb(r.base),...r.layers.map(l=>rgb(l.color))]
+  const original=palette(source)
+  let best,bestScore=-1
+  for(let i=0;i<24;i++){
+    const candidate=recolorRecipe(source,style,seed+':'+i)
+    const delta=palette(candidate).map((c,j)=>c.map((v,k)=>v-original[j][k]))
+    let score=0
+    for(const weights of samples){
+      for(let channel=0;channel<3;channel++){
+        let difference=delta[0][channel]
+        for(let j=0;j<weights.length;j++)difference=mix(difference,delta[j+1][channel],weights[j])
+        score+=Math.abs(difference)
+      }
+    }
+    if(score>bestScore){best=candidate;bestScore=score}
+  }
+  return best
+}
+importScripts('palette.js')
+self.onmessage=async({data})=>{
+  const recipe=data.style?chooseVariation(data.recipe,data.style,data.seed):data
   const size=1024, canvas=new OffscreenCanvas(size,size),ctx=canvas.getContext('2d')
   const image=ctx.createImageData(size,size),base=rgb(recipe.base)
   const layers=recipe.layers.map(l=>({...l,rgb:rgb(l.color)}))
@@ -49,5 +76,6 @@ self.onmessage=async({data:recipe})=>{
     image.data[j]=r;image.data[j+1]=g;image.data[j+2]=b;image.data[j+3]=255
   }
   ctx.putImageData(image,0,0)
-  self.postMessage(await canvas.convertToBlob({type:'image/png'}))
+  const blob=await canvas.convertToBlob({type:'image/png'})
+  self.postMessage(data.style?{recipe,blob}:blob)
 }
