@@ -152,7 +152,7 @@ async function materialColor(blob){
 function renderRecipe(recipe){
   return new Promise((resolve,reject)=>{
       const worker=new Worker('compose.js')
-      worker.onmessage=e=>{worker.terminate();resolve(e.data)}
+      worker.onmessage=e=>{worker.terminate();if(e.data.error)reject(Error(e.data.error));else resolve(e.data)}
       worker.onerror=()=>{worker.terminate();reject(Error('The texture could not be rendered.'))}
       worker.postMessage(recipe)
     })
@@ -204,24 +204,29 @@ function addMaterial(m){
     }catch{notice('Could not delete this material.')}
   }
   menu.append(remove)
-  if(m.recipe){
+  if(m.recipe || m.generated || m.src){
     const recolor=document.createElement('button')
     recolor.textContent='Recolor'
     const styles=document.createElement('div')
     styles.hidden=true
     recolor.onclick=()=>{styles.hidden=!styles.hidden}
-    for(const style of ['Joker','Harlequin','Carnival']){
+    const tones=document.createElement('div'), palettes=document.createElement('div')
+    for(const group of [tones,palettes])group.className='recolor-row'
+    styles.append(tones,palettes)
+    for(const style of ['Darker','Lighter','Joker','Harlequin','Carnival']){
       const button=document.createElement('button')
       button.textContent=style
       button.onclick=async()=>{
         const surface=target, seed=newId()
         try{
-          const {blob,recipe}=await renderRecipe({recipe:m.recipe,style,seed})
-          await applyMaterial(surface,{id:newId(),name:recipe.name,recipe,seed,blob,generated:true,
-            color:await materialColor(blob).catch(()=>recipe.base)})
+          const source=m.recipe?{recipe:m.recipe}:{source:m.blob||await (await fetch(m.src)).blob()}
+          const {blob,recipe}=await renderRecipe({...source,style,seed})
+          await applyMaterial(surface,{id:newId(),name:m.name+' · '+style,recipe,seed,blob,generated:true,
+            color:await materialColor(blob).catch(()=>recipe?.base||m.color)})
         }catch{notice('Could not create the color variation.')}
       }
-      styles.append(button)
+      const group=(style==='Darker'||style==='Lighter')?tones:palettes
+      group.append(button)
     }
     menu.append(recolor,styles)
   }

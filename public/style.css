@@ -13,3 +13,5 @@
 }
 
 .material-row{display:grid;grid-template-columns:minmax(0,1fr) 42px;align-items:center}.material-row>button:nth-child(2){justify-content:center;font-size:22px}.material-actions{grid-column:1/-1;border-bottom:1px solid #ffffff25;padding:4px}.material-actions button{display:inline-block;width:auto;padding:8px 10px}.material-actions>div{background:#ffffff0a;border-radius:8px}
+
+.recolor-row{display:flex;flex-wrap:wrap;gap:2px}

@@ -38,6 +38,7 @@ function rgb(hex){return [1,3,5].map(i=>parseInt(hex.slice(i,i+2),16))}
 // Score candidate palettes after the layers have blended. Palette shifts that
 // cancel each other, or affect only a nearly invisible layer, score poorly.
 function chooseVariation(source,style,seed){
+  if(style==='Darker'||style==='Lighter')return recolorRecipe(source,style,seed)
   const samples=[]
   for(let y=0;y<12;y++)for(let x=0;x<12;x++){
     samples.push(source.layers.map((l,i)=>l.opacity*weight(l,(x+.5)/12,(y+.5)/12,i*48947+31)))
@@ -61,7 +62,30 @@ function chooseVariation(source,style,seed){
   return best
 }
 importScripts('palette.js')
-self.onmessage=async({data})=>{
+async function recolorPixels(source,style,seed){
+  const bitmap=await createImageBitmap(source)
+  const canvas=new OffscreenCanvas(bitmap.width,bitmap.height)
+  const ctx=canvas.getContext('2d')
+  try{ctx.drawImage(bitmap,0,0)}finally{bitmap.close()}
+  const pixels=ctx.getImageData(0,0,canvas.width,canvas.height)
+  // A common channel shift preserves grain and veins even in flattened tiles.
+  const neutral={name:'',base:'#808080',layers:[]}
+  const shifts=rgb(chooseVariation(neutral,style,seed).base).map(v=>v-128)
+  const tones=style==='Darker'||style==='Lighter'
+  for(let i=0;i<pixels.data.length;i+=4){
+    for(let c=0;c<3;c++){
+      const value=pixels.data[i+c]
+      pixels.data[i+c]=tones?toneChannel(value,style):value+shifts[c]
+    }
+  }
+  ctx.putImageData(pixels,0,0)
+  return canvas.convertToBlob({type:'image/png'})
+}
+async function compose(data){
+  if(data.source){
+    self.postMessage({blob:await recolorPixels(data.source,data.style,data.seed)})
+    return
+  }
   const recipe=data.style?chooseVariation(data.recipe,data.style,data.seed):data
   const size=1024, canvas=new OffscreenCanvas(size,size),ctx=canvas.getContext('2d')
   const image=ctx.createImageData(size,size),base=rgb(recipe.base)
@@ -79,3 +103,5 @@ self.onmessage=async({data})=>{
   const blob=await canvas.convertToBlob({type:'image/png'})
   self.postMessage(data.style?{recipe,blob}:blob)
 }
+
+self.onmessage=({data})=>compose(data).catch(err=>self.postMessage({error:err.message}))
