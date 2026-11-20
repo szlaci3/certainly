@@ -123,7 +123,7 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&openPanel)closePanel()})
 function refresh(){
   for(const b of document.querySelectorAll('[data-t]'))b.setAttribute('aria-pressed',b.dataset.t===target)
-  for(const b of $('.swatches').children)b.setAttribute('aria-pressed',b.dataset.id===surfaces[target].id)
+  for(const b of $('.swatches').querySelectorAll('[data-id]'))b.setAttribute('aria-pressed',b.dataset.id===surfaces[target].id)
 }
 async function materialColor(blob){
   const bitmap=await createImageBitmap(blob)
@@ -149,6 +149,14 @@ async function materialColor(blob){
   return '#'+[largest.r,largest.g,largest.b].map(sum=>
     Math.round(sum/largest.count).toString(16).padStart(2,'0')).join('')
 }
+function renderRecipe(recipe){
+  return new Promise((resolve,reject)=>{
+      const worker=new Worker('compose.js')
+      worker.onmessage=e=>{worker.terminate();resolve(e.data)}
+      worker.onerror=()=>{worker.terminate();reject(Error('The texture could not be rendered.'))}
+      worker.postMessage(recipe)
+    })
+}
 function addMaterial(m){
   library.set(m.id,m)
   const b=document.createElement('button')
@@ -160,14 +168,71 @@ function addMaterial(m){
     else materialColor(m.blob).then(color=>{
       preview.style.backgroundColor=color
       m.color=color
-      if(db)db.transaction('materials','readwrite').objectStore('materials').put(m)
+      if(db && library.has(m.id))db.transaction('materials','readwrite').objectStore('materials').put(m)
     }).catch(()=>{}) // Older records can still use the neutral placeholder.
   }
   else{preview.src=m.src||URL.createObjectURL(m.blob);preview.alt=''}
   b.append(preview,document.createTextNode(m.name))
   b.onclick=()=>applyMaterial(target,m).catch(()=>notice('Could not load this material.'))
-  if(m.blob)$('.swatches').prepend(b)
-  else $('.swatches').append(b)
+  const row=document.createElement('div')
+  row.className='material-row'
+  const actions=document.createElement('button')
+  actions.textContent='⋯'
+  actions.setAttribute('aria-label','Actions for '+m.name)
+  actions.setAttribute('aria-expanded','false')
+  const menu=document.createElement('div')
+  menu.className='material-actions'
+  menu.hidden=true
+  const remove=document.createElement('button')
+  remove.textContent='Delete'
+  remove.onclick=async()=>{
+    if(library.size<=1)return notice('Keep at least one material in the library.')
+    if(!confirm('Delete '+m.name+' from your library?'))return
+    try{
+      const fallback=[...library.values()].find(item=>item.id!==m.id)
+      for(const t of ['floor','ceiling']){
+        if(surfaces[t].id===m.id)await applyMaterial(t,fallback)
+      }
+      if(db){
+        const tx=db.transaction('materials','readwrite'),store=tx.objectStore('materials')
+        if(m.blob)store.delete(m.id)
+        else store.put({id:m.id,removed:true})
+        await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error)})
+      }
+      library.delete(m.id);row.remove()
+      if(preview.src?.startsWith('blob:'))URL.revokeObjectURL(preview.src)
+    }catch{notice('Could not delete this material.')}
+  }
+  menu.append(remove)
+  if(m.recipe){
+    const recolor=document.createElement('button')
+    recolor.textContent='Recolor'
+    const styles=document.createElement('div')
+    styles.hidden=true
+    recolor.onclick=()=>{styles.hidden=!styles.hidden}
+    for(const style of ['Joker','Harlequin','Carnival']){
+      const button=document.createElement('button')
+      button.textContent=style
+      button.onclick=async()=>{
+        const surface=target, seed=newId()
+        const recipe=recolorRecipe(m.recipe,style,seed)
+        try{
+          const blob=await renderRecipe(recipe)
+          await applyMaterial(surface,{id:newId(),name:recipe.name,recipe,seed,blob,generated:true,
+            color:await materialColor(blob).catch(()=>recipe.base)})
+        }catch{notice('Could not create the color variation.')}
+      }
+      styles.append(button)
+    }
+    menu.append(recolor,styles)
+  }
+  actions.onclick=()=>{
+    menu.hidden=!menu.hidden
+    actions.setAttribute('aria-expanded',String(!menu.hidden))
+  }
+  row.append(b,actions,menu)
+  if(m.blob)$('.swatches').prepend(row)
+  else $('.swatches').append(row)
 }
 function notice(text){$('#notice').textContent=text}
 function writeState(key,value,material){
@@ -213,12 +278,17 @@ async function initialize(){
     const choices=tx.objectStore('choices')
     const [items,...settings]=await Promise.all([dbResult(tx.objectStore('materials').getAll()),
       ...['floor','ceiling','target'].map(k=>dbResult(choices.get(k)))])
-    items.forEach(addMaterial)
+    for(const item of items){
+      if(item.removed){
+        library.delete(item.id)
+        $('.swatches').querySelector('[data-id="'+CSS.escape(item.id)+'"]')?.closest('.material-row').remove()
+      }else addMaterial(item)
+    }
     ;[floor,ceiling,selected]=settings
   }catch{notice('Browser storage is unavailable. Changes apply to this session only.')}
   target=selected==='ceiling'?'ceiling':'floor'
-  await Promise.all([applyMaterial('floor',library.get(floor)||library.get('dune'),false),
-    applyMaterial('ceiling',library.get(ceiling)||library.get('aurora'),false)])
+  await Promise.all([applyMaterial('floor',library.get(floor)||library.get('dune')||library.values().next().value,false),
+    applyMaterial('ceiling',library.get(ceiling)||library.get('aurora')||library.values().next().value,false)])
 }
 $('.studio').inert=true
 initialize().catch(()=>notice('Could not restore the scene.')).finally(()=>{$('.studio').inert=false})
@@ -278,13 +348,8 @@ $('form').onsubmit=async e=>{
     }
     rememberSubmission(null)
     const recipe=data.recipe
-    const blob=await new Promise((resolve,reject)=>{
-      const worker=new Worker('compose.js')
-      worker.onmessage=e=>{worker.terminate();resolve(e.data)}
-      worker.onerror=()=>{worker.terminate();reject(Error('The texture could not be rendered.'))}
-      worker.postMessage(recipe)
-    })
-    const material={id:newId(),name:recipe.name,description:recipe.name+' — '+prompt,blob,generated:true,
+    const blob=await renderRecipe(recipe)
+    const material={id:newId(),name:recipe.name,description:recipe.name+' — '+prompt,blob,recipe,generated:true,
       color:await materialColor(blob).catch(()=>recipe.base)}
     if(!await applyMaterial(t,material))return
     message('Applied '+recipe.name+' to the '+t+'.');$('textarea').value=''
