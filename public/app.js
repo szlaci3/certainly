@@ -114,6 +114,12 @@ function closePanel(){
   showPanel(null)
 }
 $('#close').onclick=closePanel
+document.addEventListener('click',e=>{
+  if(!openPanel || e.target.closest('#panel,[data-panel]'))return
+  closePanel()
+  // A scene click that dismisses the panel should preserve the cursor mode.
+  if(e.target===canvas)e.stopPropagation()
+},true)
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&openPanel)closePanel()})
 function refresh(){
   for(const b of document.querySelectorAll('[data-t]'))b.setAttribute('aria-pressed',b.dataset.t===target)
